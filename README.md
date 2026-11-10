@@ -2,6 +2,8 @@
 
 Informe técnico del pipeline de clasificación de cinco señas aisladas de la Lengua de Señas Colombiana (LSC5) para el reto **LatAm AI Challenge Chile × Colombia 2026**. Documenta los datos, las decisiones de diseño (con la evidencia que las respalda), los resultados y qué se tomó o no de la bibliografía revisada.
 
+> **Reporte técnico entregable:** documento Word entregado por separado (`Informe_tecnico_LSC5.docx`). **Pesos del modelo final:** [`models/best_model.joblib`](models/best_model.joblib).
+
 ## Contenido
 
 1. [Problema y criterios de evaluación](#1-problema-y-criterios-de-evaluación)
@@ -284,8 +286,9 @@ generate_submission.py               predicción del test y validación del subm
 ```
 
 ```powershell
-# Entorno (una vez)
+# Entorno (una vez; Python 3.12, versiones fijadas en requirements.txt)
 py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu   # opcional: PyTorch para CPU, más liviano
 .venv\Scripts\python -m pip install -r requirements.txt
 
 # Entrenamiento LOSO de todos los modelos (~20–30 min en CPU)
