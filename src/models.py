@@ -10,6 +10,7 @@ MODEL_MODES = {
     "random_forest": "vector",
     "cnn1d": "sequence",
     "gru": "sequence",
+    "gru2": "sequence",         # GRU de dos capas + Dense 128, como en Mindlin (2021)
     "lstm": "sequence",
     "tcn": "sequence",
 }
@@ -77,6 +78,27 @@ class RecurrentSignModel(nn.Module):
         return self.fc(self.dropout(out[:, -1]))
 
 
+class GRU2SignModel(nn.Module):
+    def __init__(self, num_channels=N_SEQUENCE_CHANNELS, num_classes=5):
+        """
+        GRU de dos capas como en la tesis de Mindlin (2021): GRU 64 (devuelve la secuencia)
+        -> GRU 128 (último estado) -> Dense 128 con ELU -> salida.
+        """
+        super().__init__()
+        self.norm = nn.BatchNorm1d(num_channels)
+        self.gru1 = nn.GRU(num_channels, 64, batch_first=True)
+        self.gru2 = nn.GRU(64, 128, batch_first=True)
+        self.dense = nn.Sequential(nn.Linear(128, 128), nn.ELU(), nn.Dropout(0.3))
+        self.fc = nn.Linear(128, num_classes)
+
+    def forward(self, x):
+        # x: (batch, frames, canales); BatchNorm1d espera (batch, canales, frames)
+        x = self.norm(x.transpose(1, 2)).transpose(1, 2)
+        x, _ = self.gru1(x)
+        x, _ = self.gru2(x)
+        return self.fc(self.dense(x[:, -1]))
+
+
 class TCNSignModel(nn.Module):
     def __init__(self, num_channels=N_SEQUENCE_CHANNELS, num_classes=5, hidden=64, dilations=(1, 2, 4)):
         """
@@ -117,6 +139,8 @@ def build_model(name, num_classes=5, seed=42):
         return CNN1DSignModel(num_classes=num_classes)
     if name in ("gru", "lstm"):
         return RecurrentSignModel(cell=name, num_classes=num_classes)
+    if name == "gru2":
+        return GRU2SignModel(num_classes=num_classes)
     if name == "tcn":
         return TCNSignModel(num_classes=num_classes)
     if name == "random_forest":

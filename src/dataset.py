@@ -14,19 +14,21 @@ import numpy as np
 POSE_POINTS = [0, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
 COLS_X = [p * 4 for p in POSE_POINTS] + [1536 + j * 3 for j in range(21)] + [1599 + j * 3 for j in range(21)]
 L_SHOULDER, R_SHOULDER = 1, 2          # posición de los hombros dentro de los 55 puntos
+L_WRIST, R_WRIST = 5, 6                # posición de las muñecas de la pose (puntos 15 y 16)
 LHAND = slice(13, 34)                  # mano izquierda dentro de los 55 puntos
 RHAND = slice(34, 55)                  # mano derecha dentro de los 55 puntos
 
 # Reflejo: intercambia los pares izquierda/derecha de la pose y las dos manos
 MIRROR_ORDER = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11] + list(range(34, 55)) + list(range(13, 34))
 
-# Recorte al tramo con manos
-MIN_HAND_FRAMES = 3    # frames seguidos con mano para considerar que la seña empezó
+# Recorte al tramo activo (sin el reposo del inicio y del final)
+REST_RISE = 0.3        # anchos de hombro que debe subir una muñeca respecto a su reposo para contar como seña
+MIN_ACTIVE_FRAMES = 3  # frames activos seguidos para considerar que la seña empezó
 CROP_MARGIN = 2        # frames de margen antes y después del tramo
 
 # Resumen en el tiempo
 N_SEGMENTS = 4         # tramos iguales dentro del recorte (modelos de vector)
-SEQ_LEN = 40           # frames de la secuencia remuestreada (modelos temporales)
+SEQ_LEN = 20           # frames de la secuencia remuestreada (modelos temporales); Mindlin (2021): 16 > 32
 # Cortes globales del perfil de manos (% del video completo), por si se quieren comparar:
 # SEGMENT_CUTS = [0, 10, 26, 36, 64, 74, 88, 100]
 
@@ -57,16 +59,7 @@ def load_and_normalize(raw):
     mask = np.any(xyz != 0, axis=-1)
     xy = xyz[..., :2]
 
-    # 2. Recortar al tramo con manos: primera y última vez que una mano se ve MIN_HAND_FRAMES seguidos
-    has_hand = mask[:, LHAND.start] | mask[:, RHAND.start]
-    sustained = np.convolve(has_hand, np.ones(MIN_HAND_FRAMES), mode="valid") == MIN_HAND_FRAMES
-    starts = np.flatnonzero(sustained)
-    if len(starts) > 0:  # si no hay manos, se usa el video completo
-        first = max(starts[0] - CROP_MARGIN, 0)
-        last = min(starts[-1] + MIN_HAND_FRAMES + CROP_MARGIN, len(xy))
-        xy, mask = xy[first:last], mask[first:last]
-
-    # 3. Centrar en el punto medio de los hombros y escalar por el ancho de hombros
+    # 2. Centrar en el punto medio de los hombros y escalar por el ancho de hombros
     both = mask[:, L_SHOULDER] & mask[:, R_SHOULDER]
     if both.any():
         ls, rs = xy[both, L_SHOULDER], xy[both, R_SHOULDER]
@@ -76,6 +69,21 @@ def load_and_normalize(raw):
         center, width = np.array([0.5, 0.5], np.float32), 1.0
     xy = (xy - center) / width
     xy[~mask] = 0  # los faltantes quedan en 0; siempre se consulta mask
+
+    # 3. Recortar al tramo activo: frames donde alguna muñeca de la pose subió más de REST_RISE
+    #    anchos de hombro respecto a su reposo (su posición más baja en el video, percentil 90 de y).
+    #    Usa la pose (siempre detectada) y no la detección de manos, que en algunas cámaras ve las manos en reposo.
+    wrists = [L_WRIST, R_WRIST]
+    if mask[:, wrists].all(axis=0).any():  # sin muñecas detectadas, se usa el video completo
+        wrists_y = np.where(mask[:, wrists], xy[:, wrists, 1], np.nan)
+        rise = np.nanpercentile(wrists_y, 90, axis=0) - wrists_y
+        active = (rise > REST_RISE).any(axis=1)
+        sustained = np.convolve(active, np.ones(MIN_ACTIVE_FRAMES), mode="valid") == MIN_ACTIVE_FRAMES
+        starts = np.flatnonzero(sustained)
+        if len(starts) > 0:  # si no hay tramo activo, se usa el video completo
+            first = max(starts[0] - CROP_MARGIN, 0)
+            last = min(starts[-1] + MIN_ACTIVE_FRAMES + CROP_MARGIN, len(xy))
+            xy, mask = xy[first:last], mask[first:last]
     return xy, mask
 
 
@@ -112,11 +120,13 @@ def augment(xy, mask):
     return xy, mask
 
 
-def to_features(xy, mask, mode="vector"):
+def to_features(xy, mask, mode="vector", temporal_jitter=False):
     """
     Convierte los puntos normalizados en la entrada del modelo.
-    mode="vector":   vector fijo (958,) -> Linear y Random Forest
-    mode="sequence": secuencia (40, 192) -> CNN 1D temporal
+    mode="vector":   vector fijo (958,) -> Dummy, Linear y Random Forest
+    mode="sequence": secuencia (SEQ_LEN, 192) -> CNN 1D, GRU, LSTM y TCN
+    temporal_jitter: solo en entrenamiento; elige al azar qué frame se toma dentro de cada
+                     intervalo del remuestreo (muestreo temporal aleatorio, Mindlin 2021).
     """
     t = len(xy)
 
@@ -133,8 +143,12 @@ def to_features(xy, mask, mode="vector"):
     presence = np.stack([mask[:, LHAND.start], mask[:, RHAND.start]], axis=1).astype(np.float32)
 
     if mode == "sequence":
-        # 3a. Remuestrear a SEQ_LEN frames (vecino más cercano) y agregar la presencia de cada mano
-        idx = np.linspace(0, t - 1, SEQ_LEN).round().astype(int)
+        # 3a. Remuestrear a SEQ_LEN frames (vecino más cercano) y agregar la presencia de cada mano.
+        #     Con temporal_jitter cada posición se mueve al azar hasta medio intervalo (misma duración, otros frames).
+        pos = np.linspace(0, t - 1, SEQ_LEN)
+        if temporal_jitter and t > 1:
+            pos = pos + np.random.uniform(-0.5, 0.5, SEQ_LEN) * (t - 1) / max(SEQ_LEN - 1, 1)
+        idx = np.clip(np.sort(pos), 0, t - 1).round().astype(int)
         return np.concatenate([feats[idx], presence[idx]], axis=1).astype(np.float32)
 
     # 3b. Media por tramo + desviación estándar global + presencia de manos por tramo (ignorando faltantes)
@@ -157,7 +171,7 @@ class SignLanguageDataset(Dataset):
             samples (list): Lista de tuplas (xy, mask) ya normalizadas con load_and_normalize.
                             Se cargan una sola vez en memoria para no releer el disco en cada época.
             labels (list): Etiquetas numéricas de las señas para cada muestra.
-            mode (str): "vector" (Linear, Random Forest) o "sequence" (CNN 1D).
+            mode (str): "vector" (Dummy, Linear, Random Forest) o "sequence" (CNN 1D, GRU, LSTM, TCN).
             augment (bool): True solo para entrenamiento.
         """
         self.samples = samples
@@ -172,5 +186,5 @@ class SignLanguageDataset(Dataset):
         xy, mask = self.samples[idx]
         if self.augment:
             xy, mask = augment(xy, mask)
-        features = to_features(xy, mask, self.mode)
+        features = to_features(xy, mask, self.mode, temporal_jitter=self.augment)
         return torch.tensor(features), torch.tensor(self.labels[idx], dtype=torch.long)
