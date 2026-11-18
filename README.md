@@ -290,6 +290,8 @@ train.py                             entrenamiento LOSO, tabla final, modelo fin
 generate_submission.py               predicción del test y validación del submission
 ```
 
+**Datos:** no se incluyen en el repositorio. Copia las carpetas entregadas por el challenge, sin cambiarles el nombre, dentro de una carpeta `data/` en la raíz del proyecto, de modo que queden `data/train/landmarks/` y `data/Test/`. Ejecuta todos los comandos desde la raíz del proyecto, porque las rutas son relativas a ella.
+
 ```powershell
 # Entorno (una vez; Python 3.12, versiones fijadas en requirements.txt)
 py -3.12 -m venv .venv
