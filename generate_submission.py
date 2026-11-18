@@ -1,5 +1,6 @@
 import os
 import sys
+import argparse
 import joblib
 import numpy as np
 import pandas as pd
@@ -7,8 +8,8 @@ import torch
 from src.dataset import load_and_normalize, to_features
 
 # Rutas por defecto (ajustar cuando los organizadores publiquen el test)
-TEST_DIR = "data/test/landmarks"
-TEMPLATE_PATH = "data/test/submission_template.csv"
+TEST_DIR = "data/Test/landmarks"
+TEMPLATE_PATH = "data/Test/submission_template.csv"
 MODEL_PATH = "models/best_model.joblib"
 OUTPUT_PATH = "submission.csv"
 
@@ -78,4 +79,11 @@ def generate_and_validate_submission(test_dir=TEST_DIR, model_path=MODEL_PATH,
 
 
 if __name__ == "__main__":
-    generate_and_validate_submission()
+    ap = argparse.ArgumentParser(description="Genera y valida submission.csv con el modelo final.")
+    ap.add_argument("--model", default=MODEL_PATH, help="modelo .joblib generado por train.py")
+    ap.add_argument("--test_dir", default=TEST_DIR, help="carpeta con los landmarks de test")
+    ap.add_argument("--template", default=TEMPLATE_PATH, help="submission_template.csv oficial")
+    ap.add_argument("--out", default=OUTPUT_PATH, help="ruta del CSV de salida")
+    a = ap.parse_args()
+    generate_and_validate_submission(test_dir=a.test_dir, model_path=a.model,
+                                     output_path=a.out, template_path=a.template)

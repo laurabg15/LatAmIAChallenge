@@ -222,7 +222,7 @@ __marimo__/
 # --- Proyecto LatAmAIChallenge ---
 # Datos del reto (no se suben al repositorio)
 data/train/
-data/test/
+data/Test/
 
 # Salidas generadas (models/ sí se versiona: contiene los pesos del modelo final entregable)
 submission.csv
