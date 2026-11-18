@@ -1,0 +1,33 @@
+{
+  "model": "linear",
+  "model_path": "models/best_model.joblib",
+  "energy": {
+    "emissions_kgCO2eq": 0.00017413002703894334,
+    "energy_kwh": 0.0005981527002880096,
+    "seconds": 37.25788688659668
+  },
+  "args": {
+    "mode": "both",
+    "models": [
+      "dummy",
+      "linear",
+      "random_forest",
+      "cnn1d",
+      "gru",
+      "gru2",
+      "lstm",
+      "tcn"
+    ],
+    "final_model": null,
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "epochs": 50,
+    "tag": "",
+    "data_dir": "data/train/landmarks",
+    "country": "CHL",
+    "online_tracker": false
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "args": {
+    "mode": "both",
+    "models": [
+      "dummy",
+      "linear",
+      "random_forest",
+      "cnn1d",
+      "gru",
+      "gru2",
+      "lstm",
+      "tcn"
+    ],
+    "final_model": null,
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "epochs": 50,
+    "tag": "",
+    "data_dir": "data/train/landmarks",
+    "country": "CHL",
+    "online_tracker": false
+  },
+  "energy": {
+    "emissions_kgCO2eq": 0.005539819234270224,
+    "energy_kwh": 0.01902978992442874,
+    "seconds": 1348.8321561813354
+  },
+  "results": [
+    {
+      "modelo": "dummy",
+      "accuracy": 0.2,
+      "f1_macro": 0.06666666666666667,
+      "gflops": 9.4325e-05,
+      "parametros": 0
+    },
+    {
+      "modelo": "linear",
+      "accuracy": 0.9911111111111113,
+      "f1_macro": 0.9910772098098865,
+      "gflops": 0.000103905,
+      "parametros": 6711
+    },
+    {
+      "modelo": "random_forest",
+      "accuracy": 0.9600000000000001,
+      "f1_macro": 0.9597701803807015,
+      "gflops": 9.7245e-05,
+      "parametros": 73730
+    },
+    {
+      "modelo": "cnn1d",
+      "accuracy": 0.970074074074074,
+      "f1_macro": 0.9703642175179696,
+      "gflops": 0.002962165,
+      "parametros": 83013
+    },
+    {
+      "modelo": "gru",
+      "accuracy": 0.9342222222222222,
+      "f1_macro": 0.9337366706666901,
+      "gflops": 0.002061045,
+      "parametros": 50245
+    },
+    {
+      "modelo": "gru2",
+      "accuracy": 0.9567407407407408,
+      "f1_macro": 0.9563609646789024,
+      "gflops": 0.005043573,
+      "parametros": 141573
+    },
+    {
+      "modelo": "lstm",
+      "accuracy": 0.937185185185185,
+      "f1_macro": 0.9355725640298291,
+      "gflops": 0.002716405,
+      "parametros": 66757
+    },
+    {
+      "modelo": "tcn",
+      "accuracy": 0.9514074074074075,
+      "f1_macro": 0.9508272577524031,
+      "gflops": 0.002061045,
+      "parametros": 50501
+    }
+  ]
+}

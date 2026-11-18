@@ -183,7 +183,8 @@ Definidos en `src/models.py`. Todos los de PyTorch normalizan la entrada con `Ba
   - Random Forest: nodos recorridos más votos.
   - En todos los casos se suma una estimación del preprocesamiento para 55 frames, la mediana del video crudo.
 - **Parámetros:** pesos entrenables en PyTorch; para Random Forest, 2 por nodo interno y 1 por clase en cada hoja.
-- **Modelo final:** el de mayor accuracy, luego mayor F1 y luego menos GFLOPs. Se reentrena con los 3 firmantes y se guarda en `models/best_model.joblib`.
+- **Modelo final:** el de mayor accuracy, luego mayor F1 y luego menos GFLOPs. Se reentrena con los 3 firmantes y se guarda en `models/best_model.joblib`. También se puede indicar a mano con `--final_model` (sección 11).
+- **Energía y emisiones (CodeCarbon):** `train.py` mide por separado el bloque LOSO completo y el reentrenamiento final: energía (kWh), emisiones (kg CO2eq) y duración. Por defecto corre offline con la intensidad de carbono de Chile (`--country CHL`), porque el clúster puede no tener internet.
 
 ## 9. Experimentos y resultados
 
@@ -274,14 +275,18 @@ Conclusiones:
 
 ```
 data/train/landmarks/sign_0X/*.npy   datos (no se suben al repositorio)
+data/Test/                           landmarks, videos y template del test (no se suben)
 notebooks/01_exploracion_dataset.ipynb
 reports/figures/                     figuras de exploración y matrices de confusión
 reports/resultados_*.csv             resultados LOSO por fold y resumen
+reports/emissions.csv                mediciones de CodeCarbon (una fila por corrida LOSO o final)
+reports/loso_info.json               argumentos, energía y resultados de la última corrida LOSO
+reports/final_info.json              argumentos, energía y ruta del último modelo final
 src/dataset.py                       preprocesamiento, aumentación y Dataset
 src/models.py                        modelos y build_model
 src/validation.py                    LOSO por firmante
 src/evaluate.py                      métricas, GFLOPs, parámetros y matrices de confusión
-train.py                             entrenamiento LOSO, tabla final y modelo final
+train.py                             entrenamiento LOSO, tabla final, modelo final y medición de energía
 generate_submission.py               predicción del test y validación del submission
 ```
 
@@ -291,21 +296,49 @@ py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu   # opcional: PyTorch para CPU, más liviano
 .venv\Scripts\python -m pip install -r requirements.txt
 
-# Entrenamiento LOSO de todos los modelos (~20–30 min en CPU)
+# Entrenamiento LOSO de todos los modelos y modelo final (~20–30 min en CPU)
 $env:PYTHONIOENCODING="utf-8"
 .venv\Scripts\python train.py
 
-# Submission (cuando exista data/test/landmarks y data/test/submission_template.csv)
+# Submission (lee data/Test/landmarks y data/Test/submission_template.csv)
 .venv\Scripts\python generate_submission.py
+```
+
+**Experimentos sin tocar el código** (`.venv\Scripts\python train.py --help` muestra todas las opciones):
+
+| Argumento | Por defecto | Uso |
+|---|---|---|
+| `--mode {loso,final,both}` | `both` | `loso`: solo validación. `final`: solo reentrenar con los 3 firmantes. `both`: validación y luego reentrenar el mejor. |
+| `--models` | los 8 | Modelos a evaluar en el LOSO. Con un subconjunto, el "mejor" se elige solo entre ellos. |
+| `--final_model` | mejor del LOSO | Modelo a reentrenar con todos. Obligatorio con `--mode final`. |
+| `--seeds` | `42 43 44` | Semillas del LOSO; la primera se usa en el modelo final. |
+| `--epochs` | `50` | Épocas de los modelos PyTorch. |
+| `--tag` | (vacío) | Guarda en `reports/<tag>/` y `models/<tag>.joblib` para no sobrescribir los resultados oficiales. |
+| `--data_dir` | `data/train/landmarks` | Carpeta de entrenamiento. |
+| `--country` | `CHL` | País (ISO alfa-3) para la intensidad de carbono de CodeCarbon offline. |
+| `--online_tracker` | desactivado | CodeCarbon online (requiere internet). |
+
+La aumentación (sección 6) va siempre activa en el entrenamiento; no tiene argumento para desactivarla.
+
+```powershell
+# Solo LOSO de los modelos de secuencia, en una carpeta aparte
+.venv\Scripts\python train.py --mode loso --models gru gru2 lstm tcn --tag secuencia
+
+# Solo el reentrenamiento final de linear, en una carpeta aparte
+.venv\Scripts\python train.py --mode final --final_model linear --tag final
+
+# Submission con un modelo distinto al oficial
+.venv\Scripts\python generate_submission.py --model models/final.joblib
 ```
 
 **Salidas:**
 - `reports/resultados_por_fold.csv` y `reports/resultados_resumen.csv`.
 - `reports/figures/confusion_<modelo>.png`, con la semilla 42.
-- `models/best_model.joblib`.
+- `models/best_model.joblib` (o `models/<tag>.joblib` con `--tag`).
+- `reports/emissions.csv`, `reports/loso_info.json` y `reports/final_info.json` (energía, emisiones, duración y argumentos de cada corrida). `emissions.csv` acumula filas; los JSON se sobrescriben con la última corrida.
 - `submission.csv`, con columnas `video_id,predicted_sign` y valores `sign_01`…`sign_05`, en el orden del template. Se valida contra el template y la predicción se hace muestra por muestra (batch 1), sin aumentación.
 
-**Configuración:** constantes al inicio de `src/dataset.py` (preprocesamiento y aumentación) y de `train.py` (modelos, épocas, semillas, exclusiones).
+**Configuración:** constantes al inicio de `src/dataset.py` (preprocesamiento y aumentación) y de `train.py` (valores por defecto de los argumentos, hiperparámetros y exclusiones). `generate_submission.py` acepta `--model`, `--test_dir`, `--template` y `--out`.
 
 ## 12. Limitaciones y trabajo pendiente
 
@@ -313,5 +346,6 @@ $env:PYTHONIOENCODING="utf-8"
 - **Supuesto de firmante:** `M` identifica al firmante. Falta confirmarlo con la documentación del dataset.
 - **Diferencias pequeñas entre modelos** (1 a 3 puntos): se usan 3 semillas, pero sigue habiendo ruido.
 - **GFLOPs del preprocesamiento:** son una estimación analítica, no un conteo exacto.
-- **Submission:** la lógica está lista, pero no se ha probado de punta a punta porque aún no están `data/test` ni el template.
+- **Energía:** CodeCarbon estima el consumo a partir de la potencia del hardware y la intensidad de carbono del país configurado. Mide el bloque LOSO completo, no cada modelo, así que no permite comparar el consumo entre modelos. Medición de la corrida C (sección 9.3), en un PC con Ryzen 7 5700X: LOSO completo ≈ 0,019 kWh y 0,0055 kg CO2eq en 22,5 min; reentrenamiento final de `linear` ≈ 0,0006 kWh y 0,00017 kg CO2eq en 37 s.
+- **Submission:** los datos de test ya están en `data/Test/` (375 muestras de M01 y el template, con ids que coinciden 1 a 1 con los `.npy`), pero el submission todavía no se ha generado de punta a punta.
 - **Próximos pasos:** early stopping, revisar la confusión de `sign_05` con `sign_01` en M03 (corrida C), separar el efecto de `SEQ_LEN` y del muestreo temporal en los modelos de secuencia, y medir el tiempo de inferencia.
