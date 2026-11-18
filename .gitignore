@@ -224,5 +224,3 @@ __marimo__/
 data/train/
 data/Test/
 
-# Salidas generadas (models/ sí se versiona: contiene los pesos del modelo final entregable)
-submission.csv

@@ -288,6 +288,7 @@ src/validation.py                    LOSO por firmante
 src/evaluate.py                      métricas, GFLOPs, parámetros y matrices de confusión
 train.py                             entrenamiento LOSO, tabla final, modelo final y medición de energía
 generate_submission.py               predicción del test y validación del submission
+submission.csv                       predicciones entregables sobre el test (modelo linear)
 ```
 
 **Datos:** no se incluyen en el repositorio. Copia las carpetas entregadas por el challenge, sin cambiarles el nombre, dentro de una carpeta `data/` en la raíz del proyecto, de modo que queden `data/train/landmarks/` y `data/Test/`. Ejecuta todos los comandos desde la raíz del proyecto, porque las rutas son relativas a ella.
@@ -349,5 +350,5 @@ La aumentación (sección 6) va siempre activa en el entrenamiento; no tiene arg
 - **Diferencias pequeñas entre modelos** (1 a 3 puntos): se usan 3 semillas, pero sigue habiendo ruido.
 - **GFLOPs del preprocesamiento:** son una estimación analítica, no un conteo exacto.
 - **Energía:** CodeCarbon estima el consumo a partir de la potencia del hardware y la intensidad de carbono del país configurado. Mide el bloque LOSO completo, no cada modelo, así que no permite comparar el consumo entre modelos. Medición de la corrida C (sección 9.3), en un PC con Ryzen 7 5700X: LOSO completo ≈ 0,019 kWh y 0,0055 kg CO2eq en 22,5 min; reentrenamiento final de `linear` ≈ 0,0006 kWh y 0,00017 kg CO2eq en 37 s.
-- **Submission:** los datos de test ya están en `data/Test/` (375 muestras de M01 y el template, con ids que coinciden 1 a 1 con los `.npy`), pero el submission todavía no se ha generado de punta a punta.
+- **Submission:** `submission.csv` se generó una sola vez con el modelo final congelado (`linear`) sobre las 375 muestras de M01 en `data/Test/`, y pasó la validación contra el template. Predicciones por clase: `sign_01` 75, `sign_02` 84, `sign_03` 66, `sign_04` 75, `sign_05` 75. Como el test tiene 75 muestras por seña, al menos 9 videos quedaron mal clasificados como `sign_02`. No se ajustó el modelo con esta información, porque las reglas del reto prohíben usar el test para modificarlo.
 - **Próximos pasos:** early stopping, revisar la confusión de `sign_05` con `sign_01` en M03 (corrida C), separar el efecto de `SEQ_LEN` y del muestreo temporal en los modelos de secuencia, y medir el tiempo de inferencia.
