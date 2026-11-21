@@ -223,4 +223,6 @@ __marimo__/
 # Datos del reto (no se suben al repositorio)
 data/train/
 data/Test/
+# Salidas de los trabajos de Slurm en el servidor cronos (<nombre>_<JOBID>.out)
+*.out
 

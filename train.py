@@ -59,18 +59,25 @@ def parse_args():
                     help="país ISO alfa-3 para CodeCarbon offline (ej: CHL, COL)")
     ap.add_argument("--online_tracker", action="store_true",
                     help="CodeCarbon online (requiere internet; por defecto offline)")
+    ap.add_argument("--tracking_mode", choices=["machine", "process"], default="machine",
+                    help="CodeCarbon: machine mide todo el equipo (PC propio); process solo este proceso "
+                         "(usar en servidores compartidos como cronos)")
     args = ap.parse_args()
     if args.mode == "final" and args.final_model is None:
         ap.error("--mode final requiere --final_model (no hay LOSO para elegir el mejor)")
     return args
 
 
-def start_tracker(project_name, output_dir, online, country):
+def start_tracker(project_name, output_dir, online, country, tracking_mode="machine"):
     """Inicia CodeCarbon. Offline por defecto (el clúster puede no tener internet).
-    Cada medición se agrega como una fila en <output_dir>/emissions.csv."""
+    Cada medición se agrega como una fila en <output_dir>/emissions.csv.
+    tracking_mode="process" mide solo este proceso: en un servidor compartido, "machine" sumaría
+    las CPU y la RAM de todos los usuarios. allow_multiple_runs evita que el lock de /tmp de otro
+    usuario con CodeCarbon bloquee esta medición."""
     os.makedirs(output_dir, exist_ok=True)
     kwargs = dict(project_name=project_name, output_dir=output_dir, output_file="emissions.csv",
-                  measure_power_secs=5, log_level="error")
+                  measure_power_secs=5, log_level="error", tracking_mode=tracking_mode,
+                  allow_multiple_runs=True)
     tracker = EmissionsTracker(**kwargs) if online else OfflineEmissionsTracker(country_iso_code=country, **kwargs)
     tracker.start()
     return tracker, time.time()
@@ -87,6 +94,16 @@ def stop_tracker(tracker, t0):
 def save_json(obj, path):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=2, ensure_ascii=False, default=float)
+
+
+def limit_threads_to_slurm():
+    """En Slurm, usa solo las CPU asignadas al trabajo. Las librerías ven todos los hilos de la
+    máquina (80 en cronos) y, sin límite, crearían más hilos que CPU disponibles.
+    Fuera de Slurm no hace nada: PyTorch elige sus hilos como siempre."""
+    cpus = os.environ.get("SLURM_CPUS_PER_TASK")
+    if cpus:
+        torch.set_num_threads(int(cpus))
+    return torch.get_num_threads()
 
 
 def set_seed(seed):
@@ -140,9 +157,11 @@ def main():
     model_path = os.path.join("models", f"{args.tag}.joblib") if args.tag else MODEL_PATH
     run_name = args.tag or "run"
 
-    # 1. Fijar semillas obligatorias de la Fase 1
+    # 1. Fijar semillas obligatorias de la Fase 1 y limitar hilos a las CPU de Slurm (si aplica)
     set_seed(seeds[0])
-    print(f"Semillas: {seeds} | modo: {args.mode} | modelos LOSO: {args.models} | épocas: {args.epochs}")
+    n_threads = limit_threads_to_slurm()
+    print(f"Semillas: {seeds} | modo: {args.mode} | modelos LOSO: {args.models} | épocas: {args.epochs} | "
+          f"hilos PyTorch: {n_threads} | CodeCarbon: {args.tracking_mode}")
 
     # 2. Escanear la carpeta de landmarks reales y armar las listas
     sign_classes = sorted([d for d in os.listdir(args.data_dir) if os.path.isdir(os.path.join(args.data_dir, d))])
@@ -178,7 +197,8 @@ def main():
 
     results = []
     if args.mode in ("loso", "both"):
-        tracker, t0 = start_tracker(f"loso_{run_name}", reports_dir, args.online_tracker, args.country)
+        tracker, t0 = start_tracker(f"loso_{run_name}", reports_dir, args.online_tracker, args.country,
+                                    args.tracking_mode)
 
         # 4. Inicializar Validación Leave-One-Signer-Out (LOSO) con los firmantes reales
         loso = LeaveOneSignerOutValidation(signers)
@@ -259,7 +279,8 @@ def main():
         mode = MODEL_MODES[final_name]
         all_train_idx = np.flatnonzero(~excluded)
 
-        tracker, t0 = start_tracker(f"final_{final_name}_{run_name}", reports_dir, args.online_tracker, args.country)
+        tracker, t0 = start_tracker(f"final_{final_name}_{run_name}", reports_dir, args.online_tracker, args.country,
+                                    args.tracking_mode)
         final_model = train_model(final_name,
                                   Subset(SignLanguageDataset(samples, labels, mode=mode, augment=True), all_train_idx),
                                   len(sign_classes), seeds[0], args.epochs)
