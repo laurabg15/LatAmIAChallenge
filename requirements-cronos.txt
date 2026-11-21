@@ -1,0 +1,6 @@
+# Servidor cronos (Python 3.10, venv ~/venv_entrenamiento).
+# Ya vienen instalados y NO se reinstalan (el código es compatible con estas versiones):
+#   numpy 1.26.4, pandas 2.2.3, scikit-learn 1.5.2, torch 2.4.1 (CPU), matplotlib 3.9.2, joblib
+# Solo falta CodeCarbon (requiere Python >= 3.10):
+#   pip install -r requirements-cronos.txt
+codecarbon==3.3.2

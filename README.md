@@ -289,6 +289,9 @@ src/evaluate.py                      métricas, GFLOPs, parámetros y matrices d
 train.py                             entrenamiento LOSO, tabla final, modelo final y medición de energía
 generate_submission.py               predicción del test y validación del submission
 submission.csv                       predicciones entregables sobre el test (modelo linear)
+job_train.sbatch                     Slurm (cronos): LOSO de dummy y linear + modelo final
+job_submission.sbatch                Slurm (cronos): submission con el modelo entrenado en el servidor
+requirements-cronos.txt              dependencias que faltan en el venv del servidor (CodeCarbon)
 ```
 
 **Datos:** no se incluyen en el repositorio. Copia las carpetas entregadas por el challenge, sin cambiarles el nombre, dentro de una carpeta `data/` en la raíz del proyecto, de modo que queden `data/train/landmarks/` y `data/Test/`. Ejecuta todos los comandos desde la raíz del proyecto, porque las rutas son relativas a ella.
@@ -320,6 +323,7 @@ $env:PYTHONIOENCODING="utf-8"
 | `--data_dir` | `data/train/landmarks` | Carpeta de entrenamiento. |
 | `--country` | `CHL` | País (ISO alfa-3) para la intensidad de carbono de CodeCarbon offline. |
 | `--online_tracker` | desactivado | CodeCarbon online (requiere internet). |
+| `--tracking_mode {machine,process}` | `machine` | `machine` mide todo el equipo (PC propio); `process` solo este proceso (servidor compartido). |
 
 La aumentación (sección 6) va siempre activa en el entrenamiento; no tiene argumento para desactivarla.
 
@@ -340,6 +344,33 @@ La aumentación (sección 6) va siempre activa en el entrenamiento; no tiene arg
 - `models/best_model.joblib` (o `models/<tag>.joblib` con `--tag`).
 - `reports/emissions.csv`, `reports/loso_info.json` y `reports/final_info.json` (energía, emisiones, duración y argumentos de cada corrida). `emissions.csv` acumula filas; los JSON se sobrescriben con la última corrida.
 - `submission.csv`, con columnas `video_id,predicted_sign` y valores `sign_01`…`sign_05`, en el orden del template. Se valida contra el template y la predicción se hace muestra por muestra (batch 1), sin aumentación.
+
+### Ejecución en el servidor cronos (Slurm)
+
+En el servidor compartido solo se entrenan `dummy` (piso de referencia) y `linear` (modelo final). Nada se ejecuta en la sesión SSH: todo va por `sbatch`, lanzado desde la raíz del proyecto.
+
+```bash
+# Una vez: landmarks según el manual del servidor y CodeCarbon (el resto ya está en ~/venv_entrenamiento)
+cd ~/Dataset && unzip -q Train.zip 'train/landmarks/*' && unzip -q Test.zip 'test/landmarks/*' 'test/submission_template.csv'
+cd ~/LatAmAIChallenge && pip install -r requirements-cronos.txt
+
+sbatch job_train.sbatch          # LOSO de dummy y linear + modelo final linear
+tail -f train_<JOBID>.out
+sbatch job_submission.sbatch     # cuando termine el anterior
+sacct -j <JOBID> --format=JobID,JobName%15,Elapsed,AllocCPUS,TotalCPU,MaxRSS,State
+```
+
+| Archivo | Recursos | Qué hace |
+|---|---|---|
+| `job_train.sbatch` | 4 CPU, 8 GB, 1 h | `train.py` con los datos de `~/Dataset/train/landmarks`, `--models dummy linear --final_model linear --tag cronos --tracking_mode process`. Acepta argumentos extra (p. ej. `--epochs 5`). |
+| `job_submission.sbatch` | 2 CPU, 4 GB, 30 min | `generate_submission.py` con `models/cronos.joblib` y `~/Dataset/test/` (en minúscula, Linux distingue mayúsculas). Escribe `reports/cronos/submission.csv`. |
+
+- **`--tag cronos`:** los resultados del servidor quedan en `reports/cronos/` y `models/cronos.joblib`, sin pisar los oficiales.
+- **Hilos:** los `.sbatch` fijan `OMP_NUM_THREADS` y el código llama a `torch.set_num_threads(SLURM_CPUS_PER_TASK)`, para no crear más hilos que las CPU asignadas. Fuera de Slurm no cambia nada.
+- **`PYTHONUNBUFFERED=1`:** la salida aparece en el `.out` al instante y no se pierde si Slurm cancela el trabajo.
+- **CodeCarbon en modo `process`:** en modo `machine` sumaría las CPU y la RAM (1 TiB) de todos los grupos. Sin permisos de root, probablemente estima la energía del CPU con su TDP en lugar de leer los contadores RAPL.
+- **El modelo se reentrena en el servidor:** `models/best_model.joblib` se guardó con numpy 2 y no carga con el numpy 1.26 del servidor.
+- Los `.sbatch` se fuerzan a saltos de línea LF (`.gitattributes`), porque Slurm rechaza CRLF.
 
 **Configuración:** constantes al inicio de `src/dataset.py` (preprocesamiento y aumentación) y de `train.py` (valores por defecto de los argumentos, hiperparámetros y exclusiones). `generate_submission.py` acepta `--model`, `--test_dir`, `--template` y `--out`.
 

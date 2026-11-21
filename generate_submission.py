@@ -20,7 +20,10 @@ def generate_and_validate_submission(test_dir=TEST_DIR, model_path=MODEL_PATH,
     Genera submission.csv con el modelo entrenado por train.py y lo valida contra el template oficial.
     Cada muestra se procesa sola (batch 1) y sin aumentación, igual que en la medición de GFLOPs.
     """
-    # 1. Cargar el modelo final
+    # 1. En Slurm, usar solo las CPU asignadas al trabajo; luego cargar el modelo final
+    #    (el .joblib debe haberse entrenado con las mismas versiones de numpy/torch/sklearn)
+    if os.environ.get("SLURM_CPUS_PER_TASK"):
+        torch.set_num_threads(int(os.environ["SLURM_CPUS_PER_TASK"]))
     bundle = joblib.load(model_path)
     model, mode, classes = bundle["model"], bundle["mode"], bundle["classes"]
     print(f"Modelo cargado: {bundle['name']} (entrada: {mode})")
